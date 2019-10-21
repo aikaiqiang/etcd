@@ -565,6 +565,7 @@ func (c *RaftCluster) SetVersion(ver *semver.Version, onSet func(*zap.Logger, *s
 			plog.Noticef("set the initial cluster version to %v", version.Cluster(ver.String()))
 		}
 	}
+	oldVer := c.version
 	c.version = ver
 	mustDetectDowngrade(c.lg, c.version)
 	if c.v2store != nil {
@@ -573,7 +574,10 @@ func (c *RaftCluster) SetVersion(ver *semver.Version, onSet func(*zap.Logger, *s
 	if c.be != nil {
 		mustSaveClusterVersionToBackend(c.be, ver)
 	}
-	ClusterVersionMetrics.With(prometheus.Labels{"cluster_version": ver.String()}).Set(1)
+	if oldVer != nil {
+		ClusterVersionMetrics.With(prometheus.Labels{"cluster_version": version.Cluster(oldVer.String())}).Set(0)
+	}
+	ClusterVersionMetrics.With(prometheus.Labels{"cluster_version": version.Cluster(ver.String())}).Set(1)
 	onSet(c.lg, ver)
 }
 
@@ -759,16 +763,21 @@ func ValidateClusterAndAssignIDs(lg *zap.Logger, local *RaftCluster, existing *R
 	if len(ems) != len(lms) {
 		return fmt.Errorf("member count is unequal")
 	}
-	sort.Sort(MembersByPeerURLs(ems))
-	sort.Sort(MembersByPeerURLs(lms))
 
 	ctx, cancel := context.WithTimeout(context.TODO(), 30*time.Second)
 	defer cancel()
 	for i := range ems {
-		if ok, err := netutil.URLStringsEqual(ctx, lg, ems[i].PeerURLs, lms[i].PeerURLs); !ok {
-			return fmt.Errorf("unmatched member while checking PeerURLs (%v)", err)
+		var err error
+		ok := false
+		for j := range lms {
+			if ok, err = netutil.URLStringsEqual(ctx, lg, ems[i].PeerURLs, lms[j].PeerURLs); ok {
+				lms[j].ID = ems[i].ID
+				break
+			}
 		}
-		lms[i].ID = ems[i].ID
+		if !ok {
+			return fmt.Errorf("PeerURLs: no match found for existing member (%v, %v), last resolver error (%v)", ems[i].ID, ems[i].PeerURLs, err)
+		}
 	}
 	local.members = make(map[types.ID]*Member)
 	for _, m := range lms {

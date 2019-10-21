@@ -159,7 +159,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		return e, err
 	}
 
-	backendFreelistType := parseBackendFreelistType(cfg.ExperimentalBackendFreelistType)
+	backendFreelistType := parseBackendFreelistType(cfg.BackendFreelistType)
 
 	srvcfg := etcdserver.ServerConfig{
 		Name:                       cfg.Name,
@@ -205,6 +205,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		ForceNewCluster:            cfg.ForceNewCluster,
 		EnableGRPCGateway:          cfg.EnableGRPCGateway,
 		EnableLeaseCheckpoint:      cfg.ExperimentalEnableLeaseCheckpoint,
+		CompactionBatchLimit:       cfg.ExperimentalCompactionBatchLimit,
 	}
 	print(e.cfg.logger, *cfg, srvcfg, memberInitialized)
 	if e.Server, err = etcdserver.NewServer(srvcfg); err != nil {
